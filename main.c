@@ -12,15 +12,17 @@
 #include <stdbool.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_ttf.h>
 #include <time.h>
 #include <unistd.h>
 
 /* Algorithm starts from the middle, so best to have odd width and height */
-#define GRID_WIDTH 25
-#define GRID_HEIGHT 15
+#define GRID_WIDTH 11
+#define GRID_HEIGHT 11
 
-#define CELL_WIDTH 40
+#define CELL_WIDTH 50
 #define CELL_BORDER 10
+#define STEP 12 // This needs to be a multiple of CELL_WIDTH+CELL_BORDER
 #define PLAYER_WIDTH CELL_WIDTH
 
 /* Window size is defined by the size of the grid */
@@ -30,7 +32,7 @@
 
 
 typedef struct {
-    int i, j;
+    int current_i, current_j, next_i, next_j, x, y;
 } Player;
 
 
@@ -38,7 +40,6 @@ typedef struct {
     int x, y;
     char walls[4]; // TOP, RIGHT, BOTTOM, LEFT
     bool visited;
-    bool player;
 } Cell;
 
 
@@ -66,72 +67,87 @@ int processEvents(SDL_Window *window, Cell grid[][GRID_WIDTH], Player *player) {
                 done = 1;
                 break;
             case SDL_KEYDOWN:
-                switch (event.key.keysym.sym) {
-                    case SDLK_UP:
-                        movePlayer(grid, player, 'T');
-                        break;
-                    case SDLK_RIGHT:
-                        movePlayer(grid, player, 'R');
-                        break;
-                    case SDLK_DOWN:
-                        movePlayer(grid, player, 'B');
-                        break;
-                    case SDLK_LEFT:
-                        movePlayer(grid, player, 'L');
-                        break;
+                if (event.key.repeat == 0) {
+                    switch (event.key.keysym.sym) {
+                       case SDLK_UP:
+                           movePlayer(grid, player, 'T');
+                           break;
+                       case SDLK_RIGHT:
+                           movePlayer(grid, player, 'R');
+                           break;
+                       case SDLK_DOWN:
+                           movePlayer(grid, player, 'B');
+                           break;
+                       case SDLK_LEFT:
+                           movePlayer(grid, player, 'L');
+                           break;
+                    }
                 }
+               
         }
     }
-    
-    /* Can't be else if, otherwise only one thing gets processed at once */
-//    const Uint8 *state = SDL_GetKeyboardState(NULL);
-//    if (state[SDL_SCANCODE_LEFT]) {
-//        player1->x -= 5;
-//    }
-//    if (state[SDL_SCANCODE_RIGHT]) {
-//        player1->x += 5;
-//    }
-//    if (state[SDL_SCANCODE_UP]) {
-//        player1->y -= 5;
-//    }
-//    if (state[SDL_SCANCODE_DOWN]) {
-//        player1->y += 5;
-//    }
     
     return done;
 }
 
 
+/* Takes the grid, the player and the direction and changes the next_i or
+ * next_j based on the direction, the grid limits and the presence of walls */
 void movePlayer(Cell grid[][GRID_WIDTH], Player *player, char direction) {
-    if (direction == 'T' && player->j > 0
-            && !grid[player->j][player->i].walls[0]) {
-        grid[player->j][player->i].player = false;
-        --player->j;
-        grid[player->j][player->i].player = true;
+    if (direction == 'T' && player->next_j > 0
+            && !grid[player->next_j][player->next_i].walls[0]) {
+        --player->next_j;
     }
-    else if (direction == 'R' && player->i < GRID_WIDTH
-            && !grid[player->j][player->i].walls[1]) {
-        grid[player->j][player->i].player = false;
-        ++player->i;
-        grid[player->j][player->i].player = true;
+    else if (direction == 'R' && player->next_i < GRID_WIDTH
+            && !grid[player->next_j][player->next_i].walls[1]) {
+        ++player->next_i;
     }
-    else if (direction == 'B' && player->j < GRID_HEIGHT
-            && !grid[player->j][player->i].walls[2]) {
-        grid[player->j][player->i].player = false;
-        ++player->j;
-        grid[player->j][player->i].player = true;
+    else if (direction == 'B' && player->next_j < GRID_HEIGHT
+            && !grid[player->next_j][player->next_i].walls[2]) {
+        ++player->next_j;
     }
-    else if (direction == 'L' && player->i > 0
-            && !grid[player->j][player->i].walls[3]) {
-        grid[player->j][player->i].player = false;
-        --player->i;
-        grid[player->j][player->i].player = true;
+    else if (direction == 'L' && player->next_i > 0
+            && !grid[player->next_j][player->next_i].walls[3]) {
+        --player->next_i;
     }
 }
 
+
+/* Take the player and move its x and y if those coordinates don't match
+ * the coordinates of the next cell. Once they match, set the next cell to
+ * the current cell. */
+void playerMovement(Player *player) {
+    int next_x = OFFSET+(CELL_WIDTH+CELL_BORDER)*player->next_i;
+    int next_y = OFFSET+(CELL_WIDTH+CELL_BORDER)*player->next_j;
+    
+    if (player->x == OFFSET+(CELL_WIDTH+CELL_BORDER)*player->next_i) {
+        player->current_i = player->next_i;
+    }
+    else if ( player->x < next_x) {
+        player->x += STEP; // Be careful of how this lines up with CELL_WIDTH
+    }
+    else if ( player->x > next_x) {
+        player->x -= STEP; 
+    }
+    if (player->y == OFFSET+(CELL_WIDTH+CELL_BORDER)*player->next_j) {
+        player->current_j = player->next_j;
+    }
+    else if ( player->y < next_y) {
+        player->y += STEP;
+    }
+    else if ( player->y > next_y) {
+        player->y -= STEP;
+    }
+}
+
+
 /* Take the renderer, a cell, the x and y positions, the width and the border width
  * and draw the walls of the square */
-void drawSquare(SDL_Renderer *renderer, Cell cell, int x, int y, int width, int border) {
+void drawSquare(SDL_Renderer *renderer, Cell cell) {
+    int x = OFFSET+(CELL_WIDTH+CELL_BORDER)*cell.x;
+    int y = OFFSET+(CELL_WIDTH+CELL_BORDER)*cell.y;
+    int width = CELL_WIDTH;
+    int border = CELL_BORDER;
 
     SDL_SetRenderDrawColor(renderer, 247, 246, 215, 255);
 
@@ -173,13 +189,14 @@ void printGrid(Cell grid[][GRID_WIDTH]) {
     }
 }
 
+
 /* Fill the grid with cell entities */
 void fillGrid(Cell grid[][GRID_WIDTH]) {
     int j, i;
 
     for (j = 0; j < GRID_HEIGHT; ++j) {
         for (i = 0; i < GRID_WIDTH; ++i) {
-            Cell cell = { i, j, { 1, 1, 1, 1 }, false, false};
+            Cell cell = { i, j, { 1, 1, 1, 1 }, false };
             grid[j][i] = cell;
         }
     }
@@ -192,22 +209,21 @@ void drawKey(SDL_Renderer *renderer, SDL_Texture *key) {
     SDL_RenderCopy(renderer, key, NULL, &key_rect);
 }
 
+
+void drawPlayer(SDL_Renderer *renderer, Player player) {
+    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+    SDL_Rect player_rect = { player.x, player.y, PLAYER_WIDTH, PLAYER_WIDTH };
+    SDL_RenderFillRect(renderer, &player_rect);
+}
+
+
 /* Go through each item in the grid and call drawSquare for it */
 void drawGrid(SDL_Renderer *renderer, Cell grid[][GRID_WIDTH]) {
     int i, j;
 
     for (j = 0; j < GRID_HEIGHT; ++j) {
         for (i = 0; i < GRID_WIDTH; ++i) {
-            if(grid[j][i].player) {
-                SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-                SDL_Rect player = { OFFSET+(CELL_WIDTH+CELL_BORDER)*i,
-                    OFFSET+(CELL_WIDTH+CELL_BORDER)*j,
-                    PLAYER_WIDTH, PLAYER_WIDTH };
-                SDL_RenderFillRect(renderer, &player);
-            }
-            /* 50 is the offset from x=0, y=0 */
-            drawSquare(renderer, grid[j][i], OFFSET+(CELL_WIDTH+CELL_BORDER)*i,
-                    OFFSET+(CELL_WIDTH+CELL_BORDER)*j, CELL_WIDTH, CELL_BORDER);
+            drawSquare(renderer, grid[j][i]);
         }
     }
 }
@@ -316,7 +332,7 @@ int main() {
     renderer = SDL_CreateRenderer(window, -1,
             SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
-    key_surface = IMG_Load("key.png");
+    key_surface = IMG_Load("resources/key.png");
     if (key_surface == NULL) {
         printf("Cannot find key.png\n\n");
         SDL_Quit();
@@ -329,8 +345,7 @@ int main() {
     makeMaze(grid);
 
     /* Set player location in maze */
-    Player player = { 0, 0 };
-    grid[player.j][player.i].player = true;
+    Player player = { 0, 0, 0, 0, OFFSET, OFFSET };
 
     SDL_Texture *key = SDL_CreateTextureFromSurface(renderer, key_surface);
     SDL_FreeSurface(key_surface);
@@ -348,8 +363,12 @@ int main() {
 
         /* Logic */
 
-        if (player.j == GRID_HEIGHT-1
-                && player.i == GRID_WIDTH-1) {
+        if (player.current_j != player.next_j || player.current_i != player.next_i ) {
+            playerMovement(&player);
+        }
+
+        if (player.current_j == GRID_HEIGHT-1
+                && player.current_i == GRID_WIDTH-1) {
             printf("Success!\n");
             done = 1;
         }
@@ -360,6 +379,7 @@ int main() {
 
         /* Update */
         drawGrid(renderer, grid);
+        drawPlayer(renderer, player);
         drawKey(renderer, key);
 
         /* Present the updates */
