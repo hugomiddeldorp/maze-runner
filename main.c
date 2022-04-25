@@ -26,9 +26,9 @@
 #define PLAYER_WIDTH CELL_WIDTH
 
 /* Window size is defined by the size of the grid */
-#define OFFSET CELL_WIDTH*2
-#define SCREEN_WIDTH OFFSET*2+GRID_WIDTH*(CELL_WIDTH+CELL_BORDER) 
-#define SCREEN_HEIGHT OFFSET*2+GRID_HEIGHT*(CELL_WIDTH+CELL_BORDER) 
+#define OFFSET (CELL_WIDTH*2)
+#define SCREEN_WIDTH (OFFSET*2+GRID_WIDTH*(CELL_WIDTH+CELL_BORDER))
+#define SCREEN_HEIGHT (OFFSET*2+GRID_HEIGHT*(CELL_WIDTH+CELL_BORDER)) 
 
 
 typedef struct {
@@ -210,6 +210,48 @@ void drawKey(SDL_Renderer *renderer, SDL_Texture *key) {
 }
 
 
+/* x and y positions will be different anchors based on text_align */
+void drawText(SDL_Renderer *renderer, int size, char text[],
+        char text_align, int x, int y) {
+    
+    TTF_Font *font;
+    font = TTF_OpenFont("resources/PressStart2P-Regular.ttf", size);
+    if (!font) {
+        printf("Failed to load the font:\n%s\n\n", TTF_GetError());
+    }
+    
+    SDL_Surface *text_surface;
+    SDL_Color text_colour = { 255, 255, 255 };
+    text_surface = TTF_RenderText_Solid(font, text, text_colour);
+    if (!text_surface) {
+        printf("Failed to render text:\n%s\n\n", TTF_GetError());
+    }
+    SDL_Texture *text_texture;
+    text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
+    SDL_Rect text_rect;
+
+    if (text_align == 'L') {
+        SDL_Rect text_rect = { x, y, text_surface->w, text_surface->h };
+    }
+    else if (text_align == 'C') {
+        SDL_Rect text_rect = { x-(text_surface->w/2), y, text_surface->w,
+            text_surface->h };
+    }
+    else {
+        SDL_Rect text_rect = { x-(text_surface->w), y, text_surface->w,
+            text_surface->h };
+    }
+
+    if (SDL_RenderCopy(renderer, text_texture, NULL, &text_rect) != 0) {
+        printf("Error! %s\n", SDL_GetError());
+    }
+
+    SDL_DestroyTexture(text_texture);
+    SDL_FreeSurface(text_surface);
+    TTF_CloseFont(font);
+}
+
+
 void drawPlayer(SDL_Renderer *renderer, Player player) {
     SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
     SDL_Rect player_rect = { player.x, player.y, PLAYER_WIDTH, PLAYER_WIDTH };
@@ -321,6 +363,7 @@ int main() {
     SDL_Surface *key_surface = NULL;
 
     SDL_Init(SDL_INIT_VIDEO);
+    TTF_Init();
 
     window = SDL_CreateWindow("Maze Runner", 
             SDL_WINDOWPOS_UNDEFINED,
@@ -333,11 +376,12 @@ int main() {
             SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
     key_surface = IMG_Load("resources/key.png");
-    if (key_surface == NULL) {
+    if (!key_surface) {
         printf("Cannot find key.png\n\n");
         SDL_Quit();
         return 1;
     }
+
 
     /* Maze */
     Cell grid[GRID_HEIGHT][GRID_WIDTH];
@@ -350,13 +394,19 @@ int main() {
     SDL_Texture *key = SDL_CreateTextureFromSurface(renderer, key_surface);
     SDL_FreeSurface(key_surface);
 
-
+    
     // Main game loop
     int done = 0;
 
+    float timer_start = SDL_GetTicks();
+
     while(!done) {
 
-        int start = SDL_GetPerformanceCounter();
+        /* Timer */
+        float timer_end = SDL_GetTicks();
+        float timer = (timer_end - timer_start) / 1000;
+        char timer_string[5];
+        sprintf(timer_string, "%g", timer);
 
         /* Events */
         done = processEvents(window, grid, &player);
@@ -372,12 +422,14 @@ int main() {
             printf("Success!\n");
             done = 1;
         }
-
+        
         /* Clear Window */
         SDL_SetRenderDrawColor(renderer, 22, 24, 38, 255);
         SDL_RenderClear(renderer);
 
         /* Update */
+        drawText(renderer, 32, "Maze Runner", 'C', SCREEN_WIDTH/2, 20);
+        drawText(renderer, 16, timer_string, 'L', 10, 10);
         drawGrid(renderer, grid);
         drawPlayer(renderer, player);
         drawKey(renderer, key);
@@ -386,10 +438,6 @@ int main() {
         SDL_RenderPresent(renderer);
 
         int end = SDL_GetPerformanceCounter();
-
-        /* FPS */ 
-        float elapsed = (end-start) / (float)SDL_GetPerformanceFrequency();
-        // printf("Current FPS: %f\n", 1/elapsed);
     }
 
     /* Cleanup */
